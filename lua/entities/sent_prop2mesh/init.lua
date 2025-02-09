@@ -16,108 +16,21 @@ util.AddNetworkString("prop2mesh_sync")
 util.AddNetworkString("prop2mesh_update")
 util.AddNetworkString("prop2mesh_download")
 
---[[
-local download_wait = 0.1
-local download_time = SysTime()
-local download_list
-
-hook.Add("Think", "prop2mesh_download_queue", function()
-	if not download_list or SysTime() - download_time < download_wait then
-		return
-	end
-
-	download_time = SysTime()
-
-	local crc, download = next(download_list)
-	if not crc or not download then
-		download_list = nil
-
-		if prop2mesh.enablelog then
-			prop2mesh.log(string.format("no more downloads"))
-		end
-
-		return
-	end
-
-	if not next(download.players) or not download.data then
-		download_list[crc] = nil
-
-		if prop2mesh.enablelog then
-			prop2mesh.log(string.format("download %s -> no more clients", crc))
-		end
-
-		return
-	end
-
-	local clients = {}
-	for pl, sendme in pairs(download.players) do
-		if IsValid(pl) then
-			if sendme == true then
-				download.players[pl] = false
-				clients[#clients + 1] = pl
-			end
-		else
-			download.players[pl] = nil
-		end
-	end
-
-	if next(clients) then
-		net.Start("prop2mesh_download")
-		net.WriteString(crc)
-		net.WriteStream(download.data, function(client)
-			download.players[client] = nil
-
-			if prop2mesh.enablelog then
-				prop2mesh.log(string.format("download %s -> client %s is finished", crc, client))
-			end
-		end)
-		net.Send(clients)
-
-		if prop2mesh.enablelog then
-			prop2mesh.log(string.format("download %s -> sending to %d clients", crc, #clients))
-		end
-	end
-end)
-
-net.Receive("prop2mesh_download", function(len, pl)
-	local self = net.ReadEntity()
-	if not prop2mesh.isValid(self) then
-		return
-	end
-
-	local crc = net.ReadString()
-	if not crc or not isstring(self.prop2mesh_partlists[crc]) then
-		return
-	end
-
-	if not download_list then
-		download_list = {}
-	end
-
-	if not download_list[crc] then
-		download_list[crc] = {
-			players = {},
-			data = self.prop2mesh_partlists[crc],
-		}
-	end
-
-	if download_list[crc].players[pl] == nil then
-		download_list[crc].players[pl] = true
-
-		if prop2mesh.enablelog then
-			prop2mesh.log(string.format("adding %s to download queue %s", tostring(pl), crc))
-		end
-	end
-end)
-]]
-
-
 local allow_disable = GetConVar("prop2mesh_disable_allowed")
 function prop2mesh.sendDownload(pl, self, crc)
-    net.Start("prop2mesh_download")
-    net.WriteString(crc)
-    prop2mesh.WriteStream(self.prop2mesh_partlists[crc])
-    net.Send(pl)
+
+	if prop2mesh.UseExpress then
+		local data = {
+			key = crc,
+			partlist = self.prop2mesh_partlists[crc]
+		}
+		express.Send( "prop2mesh_download", data, pl )
+	else
+		net.Start("prop2mesh_download")
+		net.WriteString(crc)
+		prop2mesh.WriteStream(self.prop2mesh_partlists[crc])
+		net.Send(pl)
+	end
 end
 
 net.Receive("prop2mesh_download", function(len, pl)
@@ -209,10 +122,6 @@ function ENT:Think()
 		if self.prop2mesh_updates then
 			self.prop2mesh_synctime = SysTime() .. ""
 
-			net.Start("prop2mesh_update")
-			net.WriteEntity(self)
-			net.WriteString(self.prop2mesh_synctime)
-
 			for index, update in pairs(self.prop2mesh_updates) do
 				for key in pairs(update) do
 					if kvpass[key] then
@@ -223,8 +132,22 @@ function ENT:Think()
 				end
 			end
 
-			net.WriteTable(self.prop2mesh_updates)
-			net.Broadcast()
+			if prop2mesh.UseExpress then
+
+				local data = {
+					Entity = self,
+					prop2mesh_synctime = self.prop2mesh_synctime,
+					prop2mesh_updates = self.prop2mesh_synctime
+				}
+				express.Broadcast( "prop2mesh_update", data )
+			else
+
+				net.Start("prop2mesh_update")
+					net.WriteEntity(self)
+					net.WriteString(self.prop2mesh_synctime)
+					net.WriteTable(self.prop2mesh_updates)
+				net.Broadcast()
+			end
 
 			self.prop2mesh_updates = nil
 		else
@@ -334,72 +257,91 @@ function ENT:RemoveController(index)
 	return true
 end
 
+local use_express = true
+local networkname = "prop2mesh_sync"
 function ENT:SendControllers(syncwith)
-	net.Start("prop2mesh_sync")
 
-	net.WriteEntity(self)
-	net.WriteString(self.prop2mesh_synctime)
-	net.WriteUInt(#self.prop2mesh_controllers, 8)
+	if use_express then
+		local data = {}
 
-	for i = 1, #self.prop2mesh_controllers do
-		local info = self.prop2mesh_controllers[i]
+		data.Entity = self
+		data.prop2mesh_synctime = self.prop2mesh_synctime
+		data.Controllers = self.prop2mesh_controllers
 
-		net.WriteString(info.crc)
-		net.WriteUInt(info.uvs, 12)
-		net.WriteBool(info.bump)
-		net.WriteString(info.mat)
-		net.WriteUInt(info.col.r, 8)
-		net.WriteUInt(info.col.g, 8)
-		net.WriteUInt(info.col.b, 8)
-		net.WriteUInt(info.col.a, 8)
-		net.WriteFloat(info.scale.x)
-		net.WriteFloat(info.scale.y)
-		net.WriteFloat(info.scale.z)
-
-		net.WriteUInt(#info.clips, 4)
-		for j = 1, #info.clips do
-			local clip = info.clips[j]
-			net.WriteFloat(clip[1])
-			net.WriteFloat(clip[2])
-			net.WriteFloat(clip[3])
-			net.WriteFloat(clip[4])
-		end
-
-		if info.linkent and IsValid(info.linkent) then
-			net.WriteBool(true)
-			net.WriteEntity(info.linkent)
+		if syncwith then
+			express.Send( networkname, data, syncwith)
 		else
-			net.WriteBool(false)
+			express.Broadcast( networkname, data )
 		end
-		if info.linkpos then
-			net.WriteBool(true)
-			net.WriteFloat(info.linkpos.x)
-			net.WriteFloat(info.linkpos.y)
-			net.WriteFloat(info.linkpos.z)
-		else
-			net.WriteBool(false)
-		end
-		if info.linkang then
-			net.WriteBool(true)
-			net.WriteFloat(info.linkang.p)
-			net.WriteFloat(info.linkang.y)
-			net.WriteFloat(info.linkang.r)
-		else
-			net.WriteBool(false)
-		end
-
-		if info.name then
-			net.WriteBool(true)
-			net.WriteString(info.name)
-		else
-			net.WriteBool(false)
-		end
-	end
-
-	if syncwith then
-		net.Send(syncwith)
 	else
-		net.Broadcast()
+		net.Start("prop2mesh_sync")
+
+		net.WriteEntity(self)
+		net.WriteString(self.prop2mesh_synctime)
+		net.WriteUInt(#self.prop2mesh_controllers, 8)
+
+		PrintTable(self.prop2mesh_controllers)
+
+		for i = 1, #self.prop2mesh_controllers do
+			local info = self.prop2mesh_controllers[i]
+
+			net.WriteString(info.crc)
+			net.WriteUInt(info.uvs, 12)
+			net.WriteBool(info.bump)
+			net.WriteString(info.mat)
+			net.WriteUInt(info.col.r, 8)
+			net.WriteUInt(info.col.g, 8)
+			net.WriteUInt(info.col.b, 8)
+			net.WriteUInt(info.col.a, 8)
+			net.WriteFloat(info.scale.x)
+			net.WriteFloat(info.scale.y)
+			net.WriteFloat(info.scale.z)
+
+			net.WriteUInt(#info.clips, 4)
+			for j = 1, #info.clips do
+				local clip = info.clips[j]
+				net.WriteFloat(clip[1])
+				net.WriteFloat(clip[2])
+				net.WriteFloat(clip[3])
+				net.WriteFloat(clip[4])
+			end
+
+			if info.linkent and IsValid(info.linkent) then
+				net.WriteBool(true)
+				net.WriteEntity(info.linkent)
+			else
+				net.WriteBool(false)
+			end
+			if info.linkpos then
+				net.WriteBool(true)
+				net.WriteFloat(info.linkpos.x)
+				net.WriteFloat(info.linkpos.y)
+				net.WriteFloat(info.linkpos.z)
+			else
+				net.WriteBool(false)
+			end
+			if info.linkang then
+				net.WriteBool(true)
+				net.WriteFloat(info.linkang.p)
+				net.WriteFloat(info.linkang.y)
+				net.WriteFloat(info.linkang.r)
+			else
+				net.WriteBool(false)
+			end
+
+			if info.name then
+				net.WriteBool(true)
+				net.WriteString(info.name)
+			else
+				net.WriteBool(false)
+			end
+		end
+
+		if syncwith then
+			net.Send(syncwith)
+		else
+			net.Broadcast()
+		end
 	end
 end
 

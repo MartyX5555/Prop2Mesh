@@ -696,10 +696,34 @@ kvpass.linkang = function(self, info, val)
 	info.linkang = val
 end
 
+-- EXPRESS
+express.Receive( "prop2mesh_update", function(data)
+	local Entity = data.Entity
+	if not prop2mesh.isValid(Entity) then
+		return
+	end
 
---[[
+	local synctime = data.prop2mesh_synctime
 
-]]
+	for index, update in pairs(data.prop2mesh_updates) do
+		local info = Entity.prop2mesh_controllers[index]
+		if not info then
+			Entity.prop2mesh_sync = nil
+			return
+		end
+		for key, val in pairs(update) do
+			if kvpass[key] then kvpass[key](Entity, info, val) else info[key] = val end
+		end
+		refresh(Entity, info)
+	end
+
+	Entity.prop2mesh_synctime = synctime
+	Entity.prop2mesh_triggertool = true
+	Entity.prop2mesh_triggereditor = prop2mesh.editor and true
+
+end )
+
+-- NETSTREAM
 net.Receive("prop2mesh_update", function(len)
 	local self = net.ReadEntity()
 	if not prop2mesh.isValid(self) then
@@ -725,6 +749,29 @@ net.Receive("prop2mesh_update", function(len)
 	self.prop2mesh_triggereditor = prop2mesh.editor and true
 end)
 
+-- EXPRESS
+express.Receive( "prop2mesh_sync", function( data )
+	local Entity = data.Entity
+	if not prop2mesh.isValid(Entity) then
+		return
+	end
+
+	discard(Entity, Entity.prop2mesh_controllers)
+
+	Entity.prop2mesh_synctime = data.prop2mesh_synctime
+	Entity.prop2mesh_controllers = data.Controllers
+
+	for k, info in ipairs(Entity.prop2mesh_controllers) do
+		info.uniqueID = safeuvs(info.uvs) .. "_" .. (info.bump and 1 or 0)
+	end
+
+	Entity.prop2mesh_refresh = true
+	Entity.prop2mesh_triggertool = true
+	Entity.prop2mesh_triggereditor = prop2mesh.editor and true
+
+end )
+
+-- NETSTREAM
 net.Receive("prop2mesh_sync", function(len)
 	local self = net.ReadEntity()
 	if not prop2mesh.isValid(self) then
@@ -817,6 +864,19 @@ function prop2mesh.handleDownload(crc, data)
 	prop2mesh.downloads = math.max(0, prop2mesh.downloads - 1)
 end
 
+-- EXPRESS
+express.Receive( "prop2mesh_download", function( data )
+	local crc = data.key
+	if not crc then
+		return
+	end
+
+	prop2mesh.downloads = prop2mesh.downloads + 1
+
+	prop2mesh.handleDownload(crc, data.partlist)
+end )
+
+-- NETSTREAM
 net.Receive("prop2mesh_download", function(len)
 	local crc = net.ReadString()
 	if not crc then
