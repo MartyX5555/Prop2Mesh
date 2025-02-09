@@ -2,7 +2,7 @@
 
 ]]
 if not prop2mesh then prop2mesh = {} end
-
+prop2mesh.UseExpress = true -- idea: completely override net usage in favour to this.
 
 --[[
 

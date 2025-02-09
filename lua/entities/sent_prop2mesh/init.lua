@@ -137,7 +137,7 @@ function ENT:Think()
 				local data = {
 					Entity = self,
 					prop2mesh_synctime = self.prop2mesh_synctime,
-					prop2mesh_updates = self.prop2mesh_synctime
+					prop2mesh_updates = self.prop2mesh_updates
 				}
 				express.Broadcast( "prop2mesh_update", data )
 			else
@@ -257,11 +257,10 @@ function ENT:RemoveController(index)
 	return true
 end
 
-local use_express = true
 local networkname = "prop2mesh_sync"
 function ENT:SendControllers(syncwith)
 
-	if use_express then
+	if prop2mesh.UseExpress then
 		local data = {}
 
 		data.Entity = self
