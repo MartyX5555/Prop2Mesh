@@ -738,15 +738,8 @@ end)
 -- EXPRESS
 express.Receive( "prop2mesh_sync", function( data )
 
-
-
-	print("======================== ARRIVED!!!! ========================")
-	--PrintTable(data)
-	--print("======================== Review ========================")
-
 	local Entity = data.Entity
 	if not prop2mesh.isValid(Entity) then
-		--print("====== Not valid =====")
 		return
 	end
 
