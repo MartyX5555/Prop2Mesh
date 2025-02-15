@@ -76,6 +76,7 @@ function ENT:Initialize()
 	self.prop2mesh_controllers = {}
 	self.prop2mesh_partlists = {}
 	self.prop2mesh_sync = true
+
 end
 
 function ENT:SetPlayer(pl)
@@ -98,6 +99,7 @@ function ENT:Think()
 	end
 
 	if self.prop2mesh_sync then
+
 		self.prop2mesh_updates = nil
 		self.prop2mesh_synctime = SysTime() .. ""
 		self.prop2mesh_syncwith = nil
@@ -179,6 +181,7 @@ duplicator.RegisterEntityModifier("prop2mesh", function(ply, self, dupe)
 	end
 	local dupe_controllers = dupe[1]
 	if istable(dupe_controllers) and next(dupe_controllers) and table.IsSequential(dupe_controllers) then
+
 		self.prop2mesh_sync = true
 
 		local dupe_data = dupe[2]
@@ -259,6 +262,8 @@ end
 
 local networkname = "prop2mesh_sync"
 function ENT:SendControllers(syncwith)
+	if not self.prop2mesh_controllers or not next(self.prop2mesh_controllers) then return end
+	-- possible bug: sendcontroller is sent twice, and there are cases where the 2nd call containts no controllers at all!
 
 	if prop2mesh.UseExpress then
 		local data = {}
@@ -278,8 +283,6 @@ function ENT:SendControllers(syncwith)
 		net.WriteEntity(self)
 		net.WriteString(self.prop2mesh_synctime)
 		net.WriteUInt(#self.prop2mesh_controllers, 8)
-
-		PrintTable(self.prop2mesh_controllers)
 
 		for i = 1, #self.prop2mesh_controllers do
 			local info = self.prop2mesh_controllers[i]

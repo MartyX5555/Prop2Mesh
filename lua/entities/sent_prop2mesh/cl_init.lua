@@ -535,20 +535,6 @@ function ENT:GetAllDataReady()
 end
 
 function ENT:GetDownloadProgress()
-	--[[
-	local max
-	for i = 1, #self.prop2mesh_controllers do
-		local stream = recycle[self.prop2mesh_controllers[i].crc].stream
-		if stream then
-			if not max then max = 0 end
-			local progress = stream:GetProgress()
-			if max < progress then
-				max = progress
-			end
-		end
-	end
-	return max
-	]]
 	return 1
 end
 
@@ -751,8 +737,16 @@ end)
 
 -- EXPRESS
 express.Receive( "prop2mesh_sync", function( data )
+
+
+
+	print("======================== ARRIVED!!!! ========================")
+	--PrintTable(data)
+	--print("======================== Review ========================")
+
 	local Entity = data.Entity
 	if not prop2mesh.isValid(Entity) then
+		--print("====== Not valid =====")
 		return
 	end
 
@@ -770,7 +764,7 @@ express.Receive( "prop2mesh_sync", function( data )
 	Entity.prop2mesh_triggereditor = prop2mesh.editor and true
 
 end )
-
+--
 -- NETSTREAM
 net.Receive("prop2mesh_sync", function(len)
 	local self = net.ReadEntity()
