@@ -29,7 +29,6 @@ if SERVER then
 
 	local select_color_p2m = Color(0, 0, 255, 255)
 	local select_material  = "models/debug/debugwhite"
-	local select_candelete = { prop_physics = true }
 
 	local function checkOwner(ply, ent)
 		if CPPI then
@@ -50,13 +49,18 @@ if SERVER then
 
 	function TOOL:MakeEnt(tr)
 		local legacy = self:IsLegacyMode()
-		local ent = ents.Create(legacy and "sent_prop2mesh_legacy" or "sent_prop2mesh")
+		local entName = legacy and "sent_prop2mesh_legacy" or "sent_prop2mesh"
+		local ply = self:GetOwner()
+		if not ply:CheckLimit("prop2mesh") then return end
+
+		local ent = ents.Create(entName)
 		local mdl = legacy and "models/hunter/plates/plate.mdl" or self:GetClientInfo("tool_setmodel")
 		if not IsUselessModel(mdl) then
 			ent:SetModel(mdl)
 		else
 			ent:SetModel("models/p2m/cube.mdl")
 		end
+
 		local ang
 		if math.abs(tr.HitNormal.x) < 0.001 and math.abs(tr.HitNormal.y) < 0.001 then
 			ang = Vector(0, 0, tr.HitNormal.z):Angle()
@@ -64,11 +68,15 @@ if SERVER then
 			ang = tr.HitNormal:Angle()
 		end
 		ang.p = ang.p + 90
+
 		ent:SetAngles(ang)
 		ent:SetPos(tr.HitPos - ent:LocalToWorld(Vector(0, 0, ent:OBBMins().z)))
 		ent:Spawn()
 		ent:Activate()
-		ent:SetPlayer(self:GetOwner())
+		ent:SetPlayer(ply)
+
+		if ply.AddCleanup then ply:AddCleanup(entName, ent) end
+		if ply.AddCount then ply:AddCount("prop2mesh", ent) end
 
 		local freeze = self:GetClientNumber("tool_setfrozen") ~= 0
 		if freeze then
@@ -275,11 +283,9 @@ if SERVER then
 	end
 
 	function TOOL:Deploy()
-		timer.Simple(0.1, function()
-			if IsValid(self.p2m.ent) then
-				self:SetStage(1)
-			end
-		end)
+		if IsValid(self.p2m.ent) then
+			self:SetStage(1)
+		end
 	end
 
 	function TOOL:SetDataByIndex(add)
@@ -298,7 +304,7 @@ if SERVER then
 					v.mode = RENDERMODE_TRANSALPHA
 				end
 				self:DeselectEntity(k, alp)
-				if rmv and select_candelete[k:GetClass()] then
+				if rmv then
 					SafeRemoveEntity(k)
 				end
 			end
@@ -381,7 +387,7 @@ if SERVER then
 									v.mode = RENDERMODE_TRANSALPHA
 								end
 								self:DeselectEntity(k, alp)
-								if rmv and select_candelete[k:GetClass()] then
+								if rmv then
 									SafeRemoveEntity(k)
 								end
 							end
@@ -753,7 +759,7 @@ local function BuildPanel_ToolSettings(self)
 		cbox.Label:SetTextColor(value and Color(255, 0, 0) or nil)
 	end
 
-	local cbox = pnl:CheckBox("Remove selected props when done", "prop2mesh_tool_setautoremove")
+	local cbox = pnl:CheckBox("Remove selected ents when done", "prop2mesh_tool_setautoremove")
 	cbox.OnChange = function(_, value)
 		cbox.Label:SetTextColor(value and Color(255, 0, 0) or nil)
 	end
@@ -888,14 +894,19 @@ local function BuildPanel_Profiler(self)
 					root = tree:AddNode(root, "icon16/user.png"),
 					num_mdls = 0,
 					num_tris = 0,
+					num_verts = 0,
 					num_ctrl = 0,
 					num_ents = 0,
+					num_size = 0,
+					seen_crc = {},
 				}
 
 				sdata.node_mdls = sdata.root:AddNode("", "icon16/bullet_black.png")
 				sdata.node_tris = sdata.root:AddNode("", "icon16/bullet_black.png")
+				sdata.node_verts = sdata.root:AddNode("", "icon16/bullet_black.png")
 				sdata.node_ctrl = sdata.root:AddNode("", "icon16/bullet_black.png")
 				sdata.node_ents = sdata.root:AddNode("", "icon16/bullet_black.png")
+				sdata.node_size = sdata.root:AddNode("", "icon16/bullet_black.png")
 				sdata.root:SetExpanded(true, true)
 
 				struct[root] = sdata
@@ -914,11 +925,22 @@ local function BuildPanel_Profiler(self)
 				if pcount and vcount then
 					sdata.num_mdls = sdata.num_mdls + pcount
 					sdata.num_tris = sdata.num_tris + vcount / 3
+					sdata.num_verts = sdata.num_verts + vcount
+				end
+
+				if info.crc and not sdata.seen_crc[info.crc] then
+					sdata.seen_crc[info.crc] = true
+					local zip = prop2mesh.getMeshData(info.crc)
+					if zip then
+						sdata.num_size = sdata.num_size + #zip
+					end
 				end
 			end
 
 			sdata.node_mdls:SetText(string.format("%d total models", sdata.num_mdls))
 			sdata.node_tris:SetText(string.format("%d total triangles", sdata.num_tris))
+			sdata.node_verts:SetText(string.format("%d total vertices", sdata.num_verts))
+			sdata.node_size:SetText(string.format("%s total file size", string.NiceSize(sdata.num_size)))
 		end
 	end
 

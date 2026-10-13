@@ -2,6 +2,10 @@
 local CheckLuaType, CheckPerms, RegisterPrivilege = SF.CheckLuaType, SF.Permissions.check, SF.Permissions.registerPrivilege
 local prop2mesh = prop2mesh
 
+list.Set("starfall_creatable_sent", "sent_prop2mesh", {{
+    ["Model"] = {TYPE_STRING, "models/hunter/plates/plate.mdl"}
+}})
+
 local function p2mOnDestroy( p2m, p2mdata, ply )
     p2mdata[p2m] = nil
 end
@@ -198,6 +202,8 @@ return function( instance )
         return next( swap ) and swap
     end
 
+    local MAX_CONTROLLERS = 64
+
     --- Creates a p2m controller.
     -- @param number count Number of controllers
     -- @param Vector pos The position to create the p2m ent
@@ -210,14 +216,16 @@ return function( instance )
         CheckLuaType( count, TYPE_NUMBER )
 
         local count = math.abs( math.ceil( count or 1 ) )
-        if count > 64 then
-            SF.Throw( "controller limit is 64 per entity", 3 )
+        if count > MAX_CONTROLLERS then
+            SF.Throw( "controller limit is " .. MAX_CONTROLLERS .. " per entity", 3 )
         end
 
         local pos = vunwrap( pos )
         local ang = aunwrap( ang )
         local ply = instance.player
         local p2mdata = instance.data.p2ms.p2ms
+
+        if not ply:CheckLimit( "prop2mesh" ) then return end
 
         local ent = ents.Create( "sent_prop2mesh" )
 
@@ -234,6 +242,9 @@ return function( instance )
         if CPPI then
             ent:CPPISetOwner( ply )
         end
+
+        if ply.AddCleanup then ply:AddCleanup( "sent_prop2mesh", ent ) end
+        if ply.AddCount then ply:AddCount( "prop2mesh", ent ) end
 
         ent:SetPlayer( ply )
         ent:SetSolid( SOLID_NONE )
@@ -258,8 +269,6 @@ return function( instance )
             CheckLuaType( bump, TYPE_BOOL )
         end
 
-        print( "wtf", bump )
-
         for i = 1, count do
             ent:AddController()
             if uvs then
@@ -278,6 +287,26 @@ return function( instance )
         if ply ~= SF.Superuser then gamemode.Call( "PlayerSpawnedSENT", ply, ent ) end
 
         return wrap( ent )
+    end
+
+    --- Creates controllers on a P2M entity.
+    -- @param number count Number of controllers
+    function ents_methods:p2mAddControllers( count )
+        CheckLuaType( count, TYPE_NUMBER )
+
+        local ent = unwrap( self )
+        if not checkValid( instance.player, ent, nil, nil, false ) then
+            return
+        end
+
+        local count = math.abs( math.ceil( count or 1 ) ) - (ent.prop2mesh_controllers and #ent.prop2mesh_controllers or 0)
+        if count > MAX_CONTROLLERS then
+            SF.Throw( "controller limit is " .. MAX_CONTROLLERS .. " per entity", 3 )
+        end
+
+        for i = 1, count do
+            ent:AddController()
+        end
     end
 
     --- Adds a model to the build stack.

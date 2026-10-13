@@ -54,13 +54,30 @@ local vecZero = Vector()
 local empty = { Mesh = Mesh(), Material = Material("models/debug/debugwhite") }
 empty.Mesh:BuildFromTriangles({{pos = Vector()},{pos = Vector()},{pos = Vector()}})
 
-local cvar = CreateClientConVar("prop2mesh_cache_time", 604800, true, false, "How long to keep cached prop2mesh data in seconds (default 1 week)")
-file.CreateDir("p2m_cache")
-local maxTime = os.time() + cvar:GetInt()
-for _, v in pairs(file.Find("p2m_cache/*.dat", "DATA")) do
-	local path = "p2m_cache/" .. v
-	if file.Time(path, "DATA") > maxTime then
-		file.Delete(path)
+do
+	local cvar = CreateClientConVar("prop2mesh_cache_time", 604800, true, false, "How long to keep cached prop2mesh data in seconds (default 1 week)")
+	file.CreateDir("p2m_cache")
+	local maxAge = cvar:GetInt()
+
+	local removed = 0
+	local failed = 0
+	for _, v in pairs(file.Find("p2m_cache/*.dat", "DATA")) do
+		local path = "p2m_cache/" .. v
+		if os.time() - file.Time(path, "DATA") > maxAge then
+			local deleted = file.Delete(path)
+			if deleted then
+				removed = removed + 1
+			else
+				failed = failed + 1
+			end
+		end
+	end
+
+	if removed ~= 0 or failed ~= 0 then
+		print("prop2mesh: Cache cleanup complete. Removed " .. removed .. " files" )
+		if failed ~= 0 then
+			print("prop2mesh: Failed to remove " .. failed .. " files")
+		end
 	end
 end
 
@@ -124,6 +141,19 @@ timer.Create("prop2trash", 60, 0, function()
 	end
 end)
 
+local downloadQueue = {}
+timer.Create("prop2mesh_download", 0, 0, function()
+	if #downloadQueue == 0 then return end
+
+	local request = table.remove(downloadQueue, 1)
+	if not IsValid(request.ent) then return end
+
+	net.Start("prop2mesh_download")
+	net.WriteEntity(request.ent)
+	net.WriteString(request.crc)
+	net.SendToServer()
+end)
+
 local function checkdownload(self, crc)
 	if recycle[crc] then
 		return true
@@ -141,13 +171,11 @@ local function checkdownload(self, crc)
 		file.Delete("p2m_cache/" .. crc .. ".dat")
 	end
 
-	net.Start("prop2mesh_download")
-	net.WriteEntity(self)
-	net.WriteString(crc)
-	net.SendToServer()
+	table.insert(downloadQueue, {ent = self, crc = crc})
 
 	return false
 end
+prop2mesh.checkdownload = checkdownload
 
 local function setuser(self, crc, bool)
 	local recycled = recycle[crc]
@@ -166,6 +194,7 @@ local function setuser(self, crc, bool)
 		end
 	end
 end
+prop2mesh.setuser = setuser
 
 local function setRenderBounds(self, min, max, scale)
 	if not min or not max then return end
@@ -186,7 +215,7 @@ local function checkmesh(crc, uniqueID)
 end
 
 hook.Add("prop2mesh_hook_meshdone", "prop2mesh_meshlab", function(crc, uniqueID, mdata)
-	if not mdata or not crc or not uniqueID then
+	if not mdata or not crc or not uniqueID or not recycle[crc] then
 		return
 	end
 
@@ -435,6 +464,7 @@ local function refresh(self, info)
 
 	setuser(self, infoCrc, true)
 end
+prop2mesh.refresh = refresh
 
 local function refreshAll(self, prop2mesh_controllers)
 	for k, info in pairs(prop2mesh_controllers) do

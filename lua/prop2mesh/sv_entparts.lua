@@ -81,6 +81,22 @@ function prop2mesh.sanitizeCustom(partlist) -- remove unused obj data
 	partlist.custom = custom
 end
 
+-- Stores ImprovedClipping clips in their own part.iclips field, separate from legacy
+-- part.clips. Both keep the side the normal points toward (dot(pos, n) >= d).
+local function append_improved_clips(part, ent)
+	if not ImprovedClipping then return end
+
+	local iclips = ImprovedClipping.GetClips(ent)
+	if not iclips[1] then return end
+
+	local pclips = {}
+	for _, clip in ipairs(iclips) do
+		pclips[#pclips + 1] = { n = clip.Normal, d = clip.Distance, s = clip.Seal or nil }
+	end
+
+	part.iclips = pclips
+end
+
 local function basic_info(partlist, ent, worldpos, worldang)
 	local part = {}
 
@@ -92,7 +108,10 @@ local function basic_info(partlist, ent, worldpos, worldang)
 		part.scale = scale
 	end
 
-	local clips = ent.ClipData or ent.EntityMods and ent.EntityMods.clips
+	append_improved_clips(part, ent)
+
+	-- Improved clipping also saves to proper clipping format, so if iclips exist, don't run the conversion.
+	local clips = not part.iclips and (ent.ClipData or ent.EntityMods and ent.EntityMods.clips)
 	if clips then
 		local pclips = {}
 		for _, clip in ipairs(clips) do
