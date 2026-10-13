@@ -1,13 +1,9 @@
 if not prop2mesh then prop2mesh = {} end
+
 prop2mesh.UseExpress = true -- idea: completely override net usage in favour to this.
-
---[[
-
-]]
-
 prop2mesh.defaultmat = "hunter/myplastic"
-
 prop2mesh.enablelog = false
+
 function prop2mesh.log(msg)
 	MsgC(Color(255,255,0), "prop2mesh> ", Color(255,255,255), msg, "\n")
 end
